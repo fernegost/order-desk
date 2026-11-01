@@ -53,9 +53,8 @@
         const SUPABASE_URL = 'https://epzebpacmjupwykfbain.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwemVicGFjbWp1cHd5a2ZiYWluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1MjIxNTgsImV4cCI6MjEwOTA5ODE1OH0.sihjP-fwRdcz7cikOUCIpTTxWvVxGd38XjaXBOGqzNU';
         
-        // Initialize Supabase correctly using window.supabase
-        const { createClient } = window.supabase;
-        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // Initialize Supabase correctly using window.supabase (single declaration)
+        const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // Fetch and display orders when the page loads
         document.addEventListener('DOMContentLoaded', loadOrders);
@@ -68,7 +67,7 @@
             const item = document.getElementById('item').value;
             const note = document.getElementById('note').value;
 
-            const { error } = await supabase
+            const { error } = await db
                 .from('orders')
                 .insert([{ customer, item, note, status: 'Waiting to be packed' }]);
 
@@ -85,7 +84,7 @@
             const ordersListEl = document.getElementById('ordersList');
             const statsEl = document.getElementById('stats');
 
-            const { data: orders, error } = await supabase
+            const { data: orders, error } = await db
                 .from('orders')
                 .select('*')
                 .order('created_at', { ascending: false });
@@ -136,7 +135,7 @@
 
         // Update order status
         async function updateStatus(id, newStatus) {
-            const { error } = await supabase
+            const { error } = await db
                 .from('orders')
                 .update({ status: newStatus })
                 .eq('id', id);
@@ -149,7 +148,7 @@
         async function deleteOrder(id) {
             if (!confirm('Are you sure you want to remove this order?')) return;
 
-            const { error } = await supabase
+            const { error } = await db
                 .from('orders')
                 .delete()
                 .eq('id', id);

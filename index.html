@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Desk</title>
+    <!-- Supabase JS Client v2 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif, system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; background: #f9f9f9; color: #333; }
+        h1, h2 { border-bottom: 2px solid #eee; padding-bottom: 0.3rem; }
+        .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
+        input, textarea, select { width: 100%; padding: 0.6rem; margin: 0.5rem 0 1rem 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background: #0066cc; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0052a3; }
+        .order-item { background: #fff; padding: 1rem; border: 1px solid #eee; border-radius: 6px; margin-bottom: 0.8rem; display: flex; justify-content: space-between; align-items: center; }
+        .order-info { flex-grow: 1; }
+        .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: bold; background: #e2e8f0; margin-left: 0.5rem; }
+        .danger { background: #fee2e2; color: #991b1b; }
+        .danger:hover { background: #fecaca; }
+    </style>
+</head>
+<body>
+
+    <h1>Order Desk</h1>
+    <div id="stats" class="card">Connecting to database...</div>
+
+    <!-- NEW ORDER SECTION -->
+    <div class="card">
+        <h2>New Order</h2>
+        <form id="orderForm">
+            <label for="customer">Customer Name *</label>
+            <input type="text" id="customer" placeholder="Name of the person ordering" required>
+
+            <label for="item">Item *</label>
+            <input type="text" id="item" placeholder="What they ordered, and how many" required>
+
+            <label for="note">Note (optional)</label>
+            <textarea id="note" placeholder="Address, size, colour, anything to remember"></textarea>
+
+            <button type="submit">Create order</button>
+        </form>
+    </div>
+
+    <!-- ALL ORDERS SECTION -->
+    <div class="card">
+        <h2>All Orders</h2>
+        <div id="ordersList">Loading orders...</div>
+    </div>
+
+    <script>
+        // --- SUPABASE CONFIGURATION ---
+        const SUPABASE_URL = 'https://epzebpacmjupwykfbain.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwemVicGFjbWp1cHd5a2ZiYWluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1MjIxNTgsImV4cCI6MjEwOTA5ODE1OH0.sihjP-fwRdcz7cikOUCIpTTxWvVxGd38XjaXBOGqzNU';
+        
+        // Initialize Supabase correctly using window.supabase
+        const { createClient } = window.supabase;
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Fetch and display orders when the page loads
+        document.addEventListener('DOMContentLoaded', loadOrders);
+
+        // Handle form submission to create a new order
+        document.getElementById('orderForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const customer = document.getElementById('customer').value;
+            const item = document.getElementById('item').value;
+            const note = document.getElementById('note').value;
+
+            const { error } = await supabase
+                .from('orders')
+                .insert([{ customer, item, note, status: 'Waiting to be packed' }]);
+
+            if (error) {
+                alert('Error creating order: ' + error.message);
+            } else {
+                document.getElementById('orderForm').reset();
+                loadOrders(); // Refresh list
+            }
+        });
+
+        // Load orders from Supabase
+        async function loadOrders() {
+            const ordersListEl = document.getElementById('ordersList');
+            const statsEl = document.getElementById('stats');
+
+            const { data: orders, error } = await supabase
+                .from('orders')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                ordersListEl.innerHTML = `<p style="color:red;">Error loading orders: ${escapeHTML(error.message)}</p>`;
+                statsEl.innerHTML = `<strong>Connection Error</strong>`;
+                console.error(error);
+                return;
+            }
+
+            // Calculate stats
+            const total = orders.length;
+            const waiting = orders.filter(o => o.status === 'Waiting to be packed').length;
+            statsEl.innerHTML = `<strong>${total}</strong> orders · <strong>${waiting}</strong> waiting to be packed`;
+
+            if (orders.length === 0) {
+                ordersListEl.innerHTML = '<p>No orders yet. Add your first one above!</p>';
+                return;
+            }
+
+            // Render orders
+            ordersListEl.innerHTML = '';
+            orders.forEach(order => {
+                const dateStr = new Date(order.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                
+                const div = document.createElement('div');
+                div.className = 'order-item';
+                div.innerHTML = `
+                    <div class="order-info">
+                        <strong>${escapeHTML(order.customer)}</strong> - ${escapeHTML(order.item)} 
+                        <span class="badge">${escapeHTML(order.status)}</span>
+                        <br><small style="color: #666;">${dateStr} ${order.note ? '· Note: ' + escapeHTML(order.note) : ''}</small>
+                    </div>
+                    <div>
+                        <select onchange="updateStatus(${order.id}, this.value)">
+                            <option value="Waiting to be packed" ${order.status === 'Waiting to be packed' ? 'selected' : ''}>Waiting</option>
+                            <option value="Packed" ${order.status === 'Packed' ? 'selected' : ''}>Packed</option>
+                            <option value="Shipped" ${order.status === 'Shipped' ? 'selected' : ''}>Shipped</option>
+                            <option value="Delivered" ${order.status === 'Delivered' ? 'selected' : ''}>Delivered</option>
+                        </select>
+                        <button class="danger" onclick="deleteOrder(${order.id})" style="padding: 0.4rem 0.6rem; margin-left: 0.5rem;">Remove</button>
+                    </div>
+                `;
+                ordersListEl.appendChild(div);
+            });
+        }
+
+        // Update order status
+        async function updateStatus(id, newStatus) {
+            const { error } = await supabase
+                .from('orders')
+                .update({ status: newStatus })
+                .eq('id', id);
+
+            if (error) alert('Error updating status: ' + error.message);
+            else loadOrders();
+        }
+
+        // Delete an order
+        async function deleteOrder(id) {
+            if (!confirm('Are you sure you want to remove this order?')) return;
+
+            const { error } = await supabase
+                .from('orders')
+                .delete()
+                .eq('id', id);
+
+            if (error) alert('Error deleting order: ' + error.message);
+            else loadOrders();
+        }
+
+        // Simple security helper to prevent HTML injection
+        function escapeHTML(str) {
+            return str ? str.replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            ) : '';
+        }
+    </script>
+</body>
+</html>
